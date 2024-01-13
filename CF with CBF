@@ -1,0 +1,225 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Nov 28 09:48:10 2023
+
+@author: tomar
+"""
+
+import pandas as pd
+import numpy as np
+import re
+
+movies_df = pd.read_csv("C:\MCA\Sem-3\Minor Project II\Movie Recommender System\movies dataset.csv",usecols=["movieId","title"])
+rating_df= pd.read_csv("C:\MCA\Sem-3\Minor Project II\Movie Recommender System\Ratings Dataset.csv",usecols=["userId","movieId","rating"])
+movies_df2 = pd.read_csv('C:\MCA\Sem-3\Minor Project II\Movie Recommender System\movies_metadata.csv', usecols=["overview","title"])
+
+
+rating_df = rating_df.sort_values(by=['userId','movieId'])
+
+
+movies_df.drop_duplicates(subset='title', inplace=True)
+movies_df['title'].duplicated().sum()
+
+movies_df2.drop_duplicates(subset='title', inplace=True)
+movies_df2['title'].duplicated().sum()
+
+
+# Example DataFrame
+
+
+# Function to remove year and trailing spacesces
+def remove_year(title):
+    return re.sub(r'\s*\(\d{4}\)$', '', title)
+
+# Apply the function to the 'title' column
+movies_df['cleaned_title'] = movies_df['title'].apply(remove_year)
+
+movies_df = movies_df.drop('title', axis=1).rename(columns={'cleaned_title': 'title'})
+
+# Display the updated DataFrame
+#print(movies_df)
+
+
+final_movie_df = pd.merge(movies_df2, movies_df, on='title',how="inner")
+final_movie_df['title'].duplicated().sum()
+final_movie_df.drop_duplicates(subset='title', inplace=True)
+final_movie_df['title'].duplicated().sum()
+final_movie_df['overview'].isna().sum()
+final_movie_df.dropna(subset=['overview'], inplace=True)
+final_movie_df['overview'].isna().sum()
+
+final_movie_df.reset_index(drop=True, inplace=True)
+print(final_movie_df)
+
+
+######   MERGE DATAFRAMES #########################
+df = pd.merge(rating_df, final_movie_df, on='movieId',how="inner")
+df["movieId"].nunique()
+df = df.sort_values(by=['userId','movieId'])
+
+# Counting total ratings given to each movie
+combine_movie_rating = df.dropna(axis=0, subset = ['title'])
+movie_ratingCount = (combine_movie_rating.groupby(by = ['title'])['rating'].count().reset_index().
+                     rename(columns = {'rating' : 'totalRatingCount'})[['title', 'totalRatingCount']]
+                     )
+
+movie_ratingCount.head()
+
+#Now we merge above two datasets to know rating given to movie by every individual user and total ratings count  of movie
+rating_with_totalRatingCount = combine_movie_rating.merge(movie_ratingCount, left_on='title', right_on='title', how='left') #how='left' i.e., left join
+rating_with_totalRatingCount.head()
+#rating_with_totalRatingCount.shape
+
+#Now we consider only those movies whose total rating count is greater than certain thresold
+popularity_threshold = 50
+popular_rating_movies = rating_with_totalRatingCount.query('totalRatingCount >= @popularity_threshold')
+popular_rating_movies.head()
+
+#toy_story_df  = popular_rating_movies[popular_rating_movies['title']=='Toy Story (1995)']
+
+popular_rating_movies.shape
+    
+movie_features_df = popular_rating_movies.pivot_table(index='title', columns='userId', values='rating').fillna(0)
+user_movie_df = movie_features_df
+movie_features_df.head()
+movie_features_df.shape
+#print(movie_features_df)
+
+
+
+#Now converting pivot table into array matrix using scipy.sparse (csr_matrix)
+#Sparse matrices (csr_matrix) only store the non-zero elements along with their indices, 
+#which can result in significant memory savings compared to dense matrices.
+# This is crucial when dealing with large datasets, as it allows for more efficient storage and processing of the data.
+from scipy.sparse import csr_matrix
+movie_features_df_matrix = csr_matrix(movie_features_df.values)
+
+from sklearn.neighbors import NearestNeighbors    #unsupervised ML NearestNeighbors
+
+model_knn = NearestNeighbors(metric = 'cosine', algorithm = 'brute')
+#Train the KNN model with the sparse matrix movie_features_df_matrix.
+model_knn.fit(movie_features_df)
+movie_features_df.shape
+
+#the trained KNN model is used to find the 5 nearest neighbors for the randomly selected movie.
+#distances will contain the cosine distances between the selected movie and its 5 nearest neighbors.
+#indices will contain the indices of these nearest neighbors in the original user-item matrix.
+query_index = np.random.choice(movie_features_df.shape[0])  #shape[0] means one record
+#query_index = 1
+
+input_title = input('Enter the movie title: ')
+
+# Check if the input title exists in the index of the DataFrame
+if input_title in movie_features_df.index:
+    # Get the index for the input title
+    query_index = movie_features_df.index.get_loc(input_title)
+    
+else:
+    print(f"No movie found with the title '{input_title}'")
+############################################################################################################################
+
+#from sklearn.metrics import mean_absolute_error
+
+# ... Your existing code ...
+
+# Split the data into training and testing sets
+#from sklearn.model_selection import train_test_split
+
+#train_data, test_data = train_test_split(rating_with_totalRatingCount, test_size=0.2)
+
+# ... Continue with your existing code ...
+
+# Train the KNN model with the sparse matrix movie_features_df_matrix.
+#model_knn.fit(movie_features_df)
+
+# Predict ratings on the test set
+#test_movie_features_df = test_data.pivot_table(index='title', columns='userId', values='rating').fillna(0)
+#test_movie_features_df_matrix = csr_matrix(test_movie_features_df.values)
+
+#predicted_ratings = model_knn.kneighbors(test_movie_features_df_matrix, n_neighbors=5)
+
+# Flatten the arrays
+#predicted_ratings = predicted_ratings.flatten()
+#test_ratings = test_movie_features_df_matrix.flatten()
+
+# Calculate Mean Absolute Error
+#mae = mean_absolute_error(test_ratings, predicted_ratings)
+#print(f'Mean Absolute Error: {mae}')
+
+
+#########################################################################################################################3
+
+#user_movie_df = df.groupby(["userId","movieId"])["rating"].mean().unstack().notnull()
+
+#index_location = movie_features_df.index[movie_features_df['userId']=="(500) Days of Summer (2009)"].tolist()
+#print(index_location)
+#print(query_index)
+
+print(" ********************* COLLABORATIVE FILTERING **************************")
+
+movie_features_df.columns
+
+distances, indices = model_knn.kneighbors(movie_features_df.iloc[query_index, :].values.reshape(1, -1), n_neighbors=5)
+
+for i in range(0, len(distances.flatten())):
+    if i == 0:
+      print('Recommendations for {0}:\n'.format(movie_features_df.index[query_index]))
+    else:
+        print('{0}: {1}, with distance of {2}:'.format(i, movie_features_df.index[indices.flatten()[i]], distances.flatten()[i]))
+
+
+####################################  CONTENT BASED MOVIE RECOMMENDER    ##############################################################################
+####################################################################################################################################################
+
+#.str.replace(r"[^\w\s]", " ", regex=True): This uses the str.replace method to replace any character that is not a word character (\w) or
+# a whitespace character (\s) with a space. 
+final_movie_df["overview"] = final_movie_df["overview"].str.replace(r"[^\w\s]"," ",regex=True).str.replace(r"[\d]"," ", regex=True)
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+tfidf = TfidfVectorizer(stop_words="english", min_df = 5)
+tfidf_matrix = tfidf.fit_transform(final_movie_df["overview"])
+tfidf_matrix.shape
+
+
+from sklearn.metrics.pairwise import cosine_similarity
+
+from scipy.sparse import csr_matrix
+
+# Assuming tfidf_matrix is a sparse matrix
+sparse_tfidf_matrix = csr_matrix(tfidf_matrix)
+similarity = cosine_similarity(sparse_tfidf_matrix, sparse_tfidf_matrix)
+
+
+#similarity = cosine_similarity(tfidf_matrix,tfidf_matrix)
+similarity.shape
+#print(similarity)
+
+#######################################3  ######################33
+#input_title = input('Enter the movie title: ')
+
+
+# Check if the title is in the dataframe
+if input_title in final_movie_df['title'].values:
+    # Get the MovieID for the given title
+    movie_id = final_movie_df.loc[final_movie_df['title'] == input_title, 'movieId'].iloc[0]
+    print(f"The MovieID for '{input_title}' is {movie_id}")
+else:
+    print(f"Movie with title '{input_title}' not found.")
+
+################################  ######################################3
+
+index =final_movie_df[final_movie_df["movieId"] == movie_id].index[0]
+#
+#print(index)
+
+#df2 = 
+similarity_scores = pd.DataFrame(similarity[index], columns=["similarity"])
+#print(similarity_scores)
+movie_indices = similarity_scores.sort_values("similarity", ascending=False)[1:6].index
+
+print(" ***************** CONTENT BASED TECOMMENDATION ***********************88")
+print("Indexes Of Higher similarity movies", movie_indices)
+
+
+final_movie_df[final_movie_df["movieId"] == movie_id]
+print(final_movie_df['title'].iloc[movie_indices])
